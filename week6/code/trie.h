@@ -128,12 +128,108 @@ class Trie {
   Trie() = default;
 
   template <class T>
-  auto Get(std::string_view key) const -> const T *;
+  auto Get(std::string_view key) const -> const T *{
+    auto node = this->root_;
+
+    if(node == nullptr)
+        return nullptr;
+
+    size_t idx = 0;
+
+    while (idx < key.size()) {
+      if (node->children_.find(key[idx]) == node->children_.end())
+        return nullptr;
+      node = node->children_.at(key[idx]);
+      idx++;
+    }
+
+    auto res=dynamic_cast<const TrieNodeWithValue<T>*>(node.get());
+    if(res != nullptr)
+        return res->value_.get();
+    return nullptr;
+  }
+
+  template<typename T>
+  std::shared_ptr<const TrieNode> _insert(std::string_view key, std::shared_ptr<const TrieNode> oriNode,int idx,T value) const
+  {
+      if (idx == key.size()) {
+          if(oriNode == nullptr)
+              return std::make_shared<TrieNodeWithValue<T>>(std::make_shared<T>(value));
+          else
+              return std::make_shared<TrieNodeWithValue<T>>(oriNode->children_,std::make_shared<T>(value));
+      }
+
+    char ch = key[idx];
+
+    std::map<char, std::shared_ptr<const TrieNode>> children;
+
+    if (oriNode != nullptr)
+    {
+      children = oriNode->children_;
+      if (oriNode->children_.find(ch) == oriNode->children_.end())
+          children[ch] = _insert(key, nullptr, idx + 1, value);
+      else children[ch] = _insert(key, oriNode->children_.at(ch), idx + 1, value);
+    }
+    else
+    {
+        children[ch] = _insert(key, nullptr, idx + 1, value);
+    }
+
+    auto res = oriNode == nullptr ? std::make_shared<TrieNode>() : oriNode->Clone();
+    res->children_ = children;
+    return res;
+  }
 
   template <class T>
-  auto Put(std::string_view key, T value) const -> Trie;
+  auto Put(std::string_view key, T value) const -> Trie
+  {
+    Trie trie;
+    trie.root_= _insert(key, root_, 0, value);
+    return trie;
+  }
 
-  auto Remove(std::string_view key) const -> Trie;
+  std::shared_ptr<const TrieNode> _remove(std::string_view key, std::shared_ptr<const TrieNode> oriNode,int idx) const
+  {
+      if (idx == key.size()) {
+          if (oriNode == nullptr)
+              return nullptr;
+          else if (oriNode->children_.size() == 0 && !oriNode->is_value_node_)
+              return nullptr;
+          else
+              return std::make_shared<TrieNode>(oriNode->children_);
+      }
+
+    char ch = key[idx];
+
+    std::map<char, std::shared_ptr<const TrieNode>> children;
+
+    if (oriNode->children_.find(ch) == oriNode->children_.end())
+        children = oriNode->children_;
+    else
+    {
+      children = oriNode->children_;
+
+      auto res = _remove(key,  oriNode->children_.at(ch), idx + 1);
+      if (!res->is_value_node_ && res->children_.size() == 0) {
+          children.erase(ch);
+      }
+      else children[ch] = res;
+    }
+
+    auto res = oriNode->Clone();
+    res->children_ = children;
+
+    return res;
+  }
+
+  auto Remove(std::string_view key) const -> Trie
+  {
+    Trie trie;
+    trie.root_= _remove(key, root_, 0);
+    if(trie.root_->children_.size() == 0)
+        trie.root_ = nullptr;
+    return trie;
+  }
 
   // Get the root of the trie, should only be used in test cases.
   auto GetRoot() const -> std::shared_ptr<const TrieNode> { return root_; }
